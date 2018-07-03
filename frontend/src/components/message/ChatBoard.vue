@@ -21,7 +21,7 @@
           </el-row>
         </div>
       </div>
-
+      <el-button style="width:10%;float:right" type="primary" @click="connect">连接</el-button>
       <el-input style="width: 70%" v-model="chatContent" placeholder="请输入聊天内容"></el-input>
       <el-button style="width:10%;float:right" type="primary" @click="sendMessage">发送</el-button>
     </el-dialog>
@@ -44,7 +44,9 @@
 </style>
 
 <script>
-  import messageApi from '../../api/message'
+  // import messageApi from '../../api/message/index'
+  import SockJS from 'sockjs-client'
+  import Stomp from 'webstomp-client'
 
   export default {
     name: 'chat-board',
@@ -59,7 +61,7 @@
       },
       localVisible (val) {
         if (val === true) {
-          this.fetchMessage()
+          // this.connect()
           return
         }
         this.$emit('on-visible-change', val)
@@ -82,41 +84,38 @@
     },
     methods: {
       sendMessage: function () {
-        var varThis = this
-        messageApi.sendMessage(
-          this.$cookie.get('token'),
-          {
-            senderUsername: this.sender,
-            receiverUsername: this.receiver,
-            messageContent: this.chatContent
-          }
-        ).then(function (response) {
-          varThis.messageList.push({
-            senderUsername: varThis.sender,
-            receiverUsername: varThis.receiver,
-            messageContent: varThis.chatContent
-          })
-          varThis.chatContent = ''
-        }).catch(function (error) {
-          console.log(error)
-          varThis.chatContent = ''
-          varThis.$message('当前网络错误，消息发送失败')
-        })
+        console.log('Send message:' + this.chatContent)
+        if (this.stompClient) {
+          const msg =
+            {
+              messageContent: this.chatContent,
+              senderUsername: this.sender,
+              receiverUsername: this.receiver
+            }
+          this.stompClient.send('/app/sendMessage', JSON.stringify(msg), {})
+        }
       },
-      fetchMessage: function () {
-        var varThis = this
-        messageApi.fetchMessage(
-          this.$cookie.get('token'),
-          {
-            senderUsername: this.sender,
-            receiverUsername: this.receiver
+      connect () {
+        this.socket = new SockJS('http://localhost:8080/socket')
+        this.stompClient = Stomp.over(this.socket)
+        this.stompClient.connect(
+          {},
+          frame => {
+            console.log(frame)
+            this.stompClient.subscribe('/queue/chat', tick => {
+              console.log(tick)
+              this.remsg = JSON.parse(tick.body)
+              this.messageList.push({
+                senderUsername: this.sender,
+                receiverUsername: this.receiver,
+                messageContent: this.chatContent
+              })
+            })
+          },
+          error => {
+            console.log(error)
           }
-        ).then(function (response) {
-          varThis.messageList = response.data.data
-          console.log(response)
-        }).catch(function (error) {
-          console.log(error)
-        })
+        )
       }
     }
   }
